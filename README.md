@@ -333,7 +333,7 @@ Here, parallel saves almost no time: `save_scores` takes milliseconds and the mo
 ## Project Structure
 
 ```
-quizmate/
+quizmate-python-tutor/
 │
 ├── README.md
 ├── requirements.txt
