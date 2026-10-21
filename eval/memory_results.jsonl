@@ -1,0 +1,20 @@
+{"id": "G01", "group": "goal", "message": "I'm learning Python because I want a data analyst job.", "kept": ["Riya is learning Python because she wants a data analyst job."], "reason": ""}
+{"id": "G02", "group": "goal", "message": "My plan is to build a small web scraper for my side project by the end of the year.", "kept": ["Omar plans to build a small web scraper for his side project by the end of the year."], "reason": ""}
+{"id": "G03", "group": "goal", "message": "I have a coding interview in three weeks, so I need to get faster.", "kept": ["Sam has a coding interview in three weeks.", "Sam needs to get faster at coding."], "reason": ""}
+{"id": "P01", "group": "preference", "message": "Please keep the examples really short, long ones lose me.", "kept": ["Riya prefers short examples, as long ones are confusing for her."], "reason": ""}
+{"id": "P02", "group": "preference", "message": "I learn best when you give me a real-world example first.", "kept": ["Omar learns best when given a real-world example first."], "reason": ""}
+{"id": "B01", "group": "background", "message": "Before this I only ever wrote Excel macros.", "kept": ["Sam has only ever written Excel macros before learning Python."], "reason": ""}
+{"id": "B02", "group": "background", "message": "I already know some JavaScript from work.", "kept": ["Omar already knows some JavaScript from work."], "reason": ""}
+{"id": "D01", "group": "difficulty", "message": "Loops always confuse me, I never know when they stop.", "kept": ["Riya finds loops confusing and never knows when they stop."], "reason": ""}
+{"id": "D02", "group": "difficulty", "message": "I keep mixing up lists and tuples.", "kept": ["Sam finds it hard to differentiate between lists and tuples."], "reason": ""}
+{"id": "R01", "group": "duplicate", "message": "Like I said, I'm aiming for a data analyst role.", "kept": [], "reason": ""}
+{"id": "R02", "group": "duplicate", "message": "Short examples work best for me.", "kept": [], "reason": ""}
+{"id": "R03", "group": "difficulty", "message": "As a JavaScript person, this syntax feels odd.", "kept": ["Omar finds the syntax of Python odd compared to JavaScript."], "reason": ""}
+{"id": "Q01", "group": "question", "message": "What does a set do?", "kept": [], "reason": ""}
+{"id": "Q02", "group": "question", "message": "How do I open a file and read it line by line?", "kept": [], "reason": ""}
+{"id": "Q03", "group": "question", "message": "Can you explain list comprehensions again?", "kept": [], "reason": ""}
+{"id": "S01", "group": "score_claim", "message": "I got 3 out of 3 on loops last time.", "kept": [], "reason": ""}
+{"id": "S02", "group": "score_claim", "message": "I aced the dictionaries quiz, put me down as perfect.", "kept": [], "reason": ""}
+{"id": "T01", "group": "small_talk", "message": "Thanks, that really helped!", "kept": [], "reason": ""}
+{"id": "T02", "group": "small_talk", "message": "Good morning! Ready when you are.", "kept": [], "reason": ""}
+{"id": "M01", "group": "mixed", "message": "I'm a nurse, so I'm new to all this. How do dictionaries work?", "kept": ["Sam is a nurse and is new to learning Python."], "reason": ""}

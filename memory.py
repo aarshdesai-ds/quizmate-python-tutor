@@ -30,7 +30,7 @@ def read_facts(store, learner_id):
         facts.append(item.value['data'])
     return facts
 
-def extract_memories(name, existing, message):
+def extract_memories(name, existing, message, config = None):
     if existing:
         facts = ["- " + line for line in existing]
         existing_memories = "\n".join(facts)
@@ -48,7 +48,7 @@ Store a fact only if it is:
 - stable: likely to still be true in a week (goals, deadlines, background, how they like to learn, what they find hard).
 
 Do not store:
-- questions {name} asks, or the topic they are asking about right now;
+- Questions {name} asks, or the topic they are asking about right now. But if {name} says they find a topic hard or confusing, that is a difficulty: store it.
 - anything about quiz scores or results (scores are recorded separately);
 - greetings, thanks or small talk;
 - anything {name} did not actually say. Do not guess.
@@ -63,7 +63,7 @@ If there is nothing worth storing, set should_write to false and return no memor
 {name}'s latest message:
 {message}
 """
-    result = structured_model.invoke(extraction_prompt)
+    result = structured_model.invoke(extraction_prompt, config=config)
     return result
 
 def save_new_facts(store, learner_id, decision):
