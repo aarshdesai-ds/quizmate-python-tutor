@@ -66,6 +66,26 @@ while True:
              print("No summary yet.")
         else:
              print(f"Summary:\n{summary}")
+    elif user_input.strip().lower() == "forget me":
+        try:
+            result = workflow.invoke({"messages":[], "forget":True, "learner_id":learner_id}, config = config)
+            while result.get("__interrupt__"):
+                payload = result["__interrupt__"][0].value
+                if payload['facts']:
+                    lines = ["- " + line for line in payload['facts']]
+                    saved_facts = "\n".join(lines)
+                    print("Saved facts:")
+                    print(saved_facts)
+                if payload['topics']:
+                    quiz_topics = ", ".join(payload['topics'])
+                    print(f"Quiz history for: {quiz_topics}")
+                print(payload['question'])
+                answer = input("answer> ").lower().strip()
+                result = workflow.invoke(Command(resume=answer), config = config)
+            print(f"bot> {result['messages'][-1].content}")
+        except Exception:
+            print("bot> Sorry, something went wrong...")  
+
     elif user_input.split()[0].lower() == "quiz":
         words = user_input.split()
         topic = words[1].lower() if len(words) > 1 else ""

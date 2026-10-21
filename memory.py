@@ -125,6 +125,22 @@ def format_memory(name, facts, scores):
                 sections.append(f"- {topic}: {data['last_score']} of {data['last_total']} last time (best {data['best']}, {data['attempts']} attempts).")
     return "\n".join(sections)
 
+def forget_learner(store, learner_id):
+    facts_deleted = 0
+    scores_deleted = 0
+    facts_space = facts_namespace(learner_id)
+    scores_space = scores_namespace(learner_id)
+    existing_facts = store.search(facts_space, limit=50)
+    existing_scores = store.search(scores_space, limit = 50)
+    for item in existing_facts:
+        store.delete(facts_space, key = item.key)
+        facts_deleted += 1
+    for item in existing_scores:
+        store.delete(scores_space, key = item.key)
+        scores_deleted += 1
+    return {"facts": facts_deleted, "scores": scores_deleted}
+    
+
 if __name__ == "__main__":
     import sys
     from langgraph.store.memory import InMemoryStore
@@ -165,6 +181,16 @@ if __name__ == "__main__":
                                 "best": 3, "last_missed": []}}
     print("ok  " if "Missed" not in format_memory("Sam", [], perfect) else "FAIL", "no 'Missed:' after a perfect quiz")
 
+    print("\n--- forget_learner (free) ---")
+    update_score(test_store, "sam", {"topic": "sets", "score": 3, "total": 3, "missed": []})
+    counts = forget_learner(test_store, "riya")
+    print(counts)
+    print("ok  " if read_facts(test_store, "riya") == [] and read_scores(test_store, "riya") == {} else "FAIL",
+          "riya's facts and scores are gone")
+    print("ok  " if list(read_scores(test_store, "sam")) == ["sets"] else "FAIL", "sam is untouched")
+    empty = forget_learner(test_store, "omar")
+    print("ok  " if empty == {"facts": 0, "scores": 0} else "FAIL", "nothing to forget gives zeros:", empty)
+    
     if len(sys.argv) > 1 and sys.argv[1] == "run":
         print("\n--- extract_memories on 5 messages (5 model calls) ---")
         existing = ["Riya is preparing for a job interview next month."]

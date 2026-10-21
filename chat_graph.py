@@ -6,8 +6,9 @@ from langgraph.graph import StateGraph, START, END
 from quiz_graph import quiz_subgraph
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
+from langgraph.types import interrupt
 import json
-from memory import read_facts, extract_memories, save_new_facts, read_scores, update_score, format_memory
+from memory import facts_namespace, scores_namespace, read_facts, extract_memories, save_new_facts, read_scores, update_score, format_memory, forget_learner
 from langgraph.store.base import BaseStore
 from typing import TypedDict, Annotated, Literal
 from langchain_openai import ChatOpenAI
@@ -26,6 +27,7 @@ class ChatState(TypedDict):
     summary: str
     quiz_topic: str
     quiz_result: dict
+    forget: bool
 
 def build_system_message(learner_id: str, summary: str, memory: str):
     learner = learners[learner_id]
@@ -49,6 +51,30 @@ def build_system_message(learner_id: str, summary: str, memory: str):
 
     return SystemMessage(content=system_message)
 
+def forget(state: ChatState, store: BaseStore):
+    facts = read_facts(store, state['learner_id'])
+    scores = read_scores(store, state['learner_id'])
+    topics = list(scores.keys())
+    facts_space = facts_namespace(state['learner_id'])
+    scores_space = scores_namespace(state['learner_id'])
+    existing_facts = store.search(facts_space, limit = 50)
+    existing_scores = store.search(scores_space, limit = 50)
+    if not existing_facts and not existing_scores:
+        reply = f"There's nothing saved about you."
+        return {"messages": [AIMessage(content=reply)], "forget": False}
+    payload = {"facts": facts, "topics": topics, "question": "Delete all of this? (yes/no)"}    
+    answer = interrupt(payload)
+    cleaned_answer = answer.strip().lower()
+    if cleaned_answer == "yes":
+        deleted_data = forget_learner(store, state['learner_id'])
+        removals = [RemoveMessage(id=m.id) for m in state['messages']]
+        reply =  f"Done. I've deleted {deleted_data['facts']} saved facts and your quiz history for {deleted_data['scores']} topics. I've also cleared this conversation."
+        return {"messages": removals + [AIMessage(content = reply)], "summary":"", "forget": False}
+    else:
+        reply = "OK. I've kept everything."
+    return {"messages": [AIMessage(content = reply)], "forget": False}
+
+
 def remember(state: ChatState, store: BaseStore):
     last_message = state['messages'][-1].content
     learner_id = state['learner_id']
@@ -60,7 +86,9 @@ def remember(state: ChatState, store: BaseStore):
     return {}
 
 def route_after_start(state: ChatState):
-    if state.get('quiz_topic', ""):
+    if state.get("forget", False):
+        return "forget"
+    elif state.get('quiz_topic', ""):
         return "quiz"
     return "remember"
 
@@ -129,6 +157,7 @@ def summarise(state: ChatState):
 graph = StateGraph(ChatState)
 
 graph.add_node("chat", chat_node)
+graph.add_node("forget", forget)
 graph.add_node("tools", tool_node)
 graph.add_node("summarise", summarise)
 graph.add_node("quiz", quiz_subgraph)
@@ -138,6 +167,7 @@ graph.add_node("save_scores", save_scores)
 
 
 graph.add_conditional_edges(START, route_after_start, {
+    "forget": "forget",
     "quiz": "quiz",
     "remember": "remember"
 })
@@ -151,19 +181,19 @@ graph.add_edge("remember", "chat")
 graph.add_edge("tools", "chat")
 graph.add_edge("quiz", "save_scores")
 graph.add_edge("save_scores", "report_quiz")
+graph.add_edge("forget", END)
 graph.add_edge("report_quiz", END)
 graph.add_edge("summarise", END)
 
 workflow = graph.compile(checkpointer=checkpointer, store=store)
-
 
 if __name__ == "__main__":
     import sys
     from uuid import uuid4
     from langgraph.types import Command
     from langgraph.store.memory import InMemoryStore
+    from langgraph.checkpoint.memory import InMemorySaver
     from storage import config_for
-    from memory import facts_namespace, scores_namespace
 
     print("--- nodes (free) ---")
     print(sorted(workflow.get_graph().nodes))
@@ -172,6 +202,8 @@ if __name__ == "__main__":
           and ("save_scores", "report_quiz") in edges else "FAIL", "new arrows in place")
     print("ok  " if ("tools", "chat") in edges and ("tools", "remember") not in edges else "FAIL",
           "tools go back to chat, not remember")
+    print("ok  " if ("__start__", "forget") in edges and ("forget", "__end__") in edges else "FAIL",
+          "forget wired: start -> forget -> end")
 
     print("\n--- system message with memory (free) ---")
     memory_text = "What you know about Riya:\n- Riya is preparing for a job interview next month."
@@ -191,6 +223,35 @@ if __name__ == "__main__":
     saved = test_store.get(("learner", "riya", "scores"), "loops")
     print("ok  " if saved and saved.value["last_score"] == 2 else "FAIL", "score written by code:", saved.value if saved else None)
 
+    print("\n--- forget, on a test copy of the graph (free: no model calls) ---")
+    forget_store = InMemoryStore()
+    forget_store.put(facts_namespace("riya"), "f1", {"data": "Riya prefers short examples."})
+    update_score(forget_store, "riya", {"topic": "sets", "score": 2, "total": 3,
+                                        "missed": [{"question": "What does a set remove?"}]})
+    test_graph = graph.compile(checkpointer=InMemorySaver(), store=forget_store)
+    test_config = config_for("riya", "forget-test")
+
+    state = test_graph.invoke({"messages": [], "learner_id": "riya", "forget": True}, config=test_config)
+    payload = state["__interrupt__"][0].value if state.get("__interrupt__") else None
+    print("ok  " if payload and payload["facts"] == ["Riya prefers short examples."] and payload["topics"] == ["sets"]
+          else "FAIL", "pauses and shows what will go:", payload)
+    state = test_graph.invoke(Command(resume="no"), config=test_config)
+    print("ok  " if read_facts(forget_store, "riya") and read_scores(forget_store, "riya") else "FAIL",
+          "'no' keeps everything:", state["messages"][-1].content)
+    print("ok  " if state["forget"] is False else "FAIL", "flag cleared after 'no'")
+
+    test_graph.invoke({"messages": [HumanMessage(content="I'm a nurse.")], "learner_id": "riya", "forget": True},
+                      config=test_config)
+    state = test_graph.invoke(Command(resume="  Yes "), config=test_config)
+    print("ok  " if read_facts(forget_store, "riya") == [] and read_scores(forget_store, "riya") == {} else "FAIL",
+          "'  Yes ' deletes:", state["messages"][-1].content)
+    print("ok  " if len(state["messages"]) == 1 and isinstance(state["messages"][0], AIMessage) else "FAIL",
+          "session cleared, only the reply left:", len(state["messages"]))
+    print("ok  " if state.get("summary", "") == "" else "FAIL", "summary emptied")
+
+    state = test_graph.invoke({"messages": [], "learner_id": "riya", "forget": True}, config=test_config)
+    print("ok  " if not state.get("__interrupt__") else "FAIL", "nothing stored, no pause:", state["messages"][-1].content)
+
     if len(sys.argv) > 1 and sys.argv[1] == "run":
         print("\n--- two sessions as sam: say a goal and take a quiz, then come back (uses the model) ---")
         session_a = {**config_for("sam", f"test-{uuid4().hex[:6]}"), "tags": ["quizmate", "test", "memory"]}
@@ -209,12 +270,7 @@ if __name__ == "__main__":
 
         print("\nstored facts:", read_facts(store, "sam"))
         print("stored scores:", read_scores(store, "sam"))
-
-        for item in store.search(facts_namespace("sam"), limit=50):
-            store.delete(facts_namespace("sam"), item.key)
-        for item in store.search(scores_namespace("sam"), limit=50):
-            store.delete(scores_namespace("sam"), item.key)
-        print("\ncleaned up: sam's test facts and scores removed")
+        print("\ncleaned up:", forget_learner(store, "sam"))
 
     if len(sys.argv) > 1 and sys.argv[1] == "probe":
         print("\n--- probe: facts + quiz history, 'why' x5 and 'colour' x2 (7 model calls, no store) ---")
@@ -258,8 +314,4 @@ if __name__ == "__main__":
         print(f"\nsam> How did I do on loops last time?\nbot> {reply[:200]}")
         print("ok  " if "1" in reply and "3 out of 3" not in reply and "3/3" not in reply else "FAIL", "tutor reports the stored score")
 
-        for item in store.search(facts_namespace("sam"), limit=50):
-            store.delete(facts_namespace("sam"), item.key)
-        for item in store.search(scores_namespace("sam"), limit=50):
-            store.delete(scores_namespace("sam"), item.key)
-        print("\ncleaned up: sam's test facts and scores removed")
+        print("\ncleaned up:", forget_learner(store, "sam"))
