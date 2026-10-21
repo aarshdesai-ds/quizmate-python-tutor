@@ -3,6 +3,7 @@ from storage import checkpointer
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage, BaseMessage
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
+from quiz_graph import quiz_subgraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from dotenv import load_dotenv
 import json
@@ -21,6 +22,8 @@ class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     learner_id: str
     summary: str
+    quiz_topic: str
+    quiz_result: dict
 
 def build_system_message(learner_id: str, summary: str):
     learner = learners[learner_id]
@@ -38,6 +41,26 @@ def build_system_message(learner_id: str, summary: str):
     if summary:
         system_message = f"{system_message}\nEarlier in this session:\n{summary}"
     return SystemMessage(content=system_message)
+
+def route_after_start(state: ChatState):
+    if state.get('quiz_topic', ""):
+        return "quiz"
+    return "chat"
+
+def report_quiz(state: ChatState):
+    learner = learners[state['learner_id']]
+    name = learner['name']
+    result = state['quiz_result']
+    score_line = f"{name}, you scored {result['score']} of {result['total']} on {result['topic']}."
+    if result['missed']:
+        lines = []
+        for question in result['missed']:
+            lines.append(f"You missed: {question['question']}\nThe answer was {question['correct_text']}: {question['explanation']}")
+        feedback = "\n".join(lines)
+    else:
+        feedback = "Well done!"
+    message = f"{score_line}\n\n{feedback}"
+    return {"messages":[AIMessage(content=message)], "quiz_topic": ""}
 
 def chat_node(state: ChatState):
     messages = [build_system_message(state['learner_id'], state.get("summary", ""))] + state['messages']
@@ -79,8 +102,13 @@ graph = StateGraph(ChatState)
 graph.add_node("chat", chat_node)
 graph.add_node("tools", tool_node)
 graph.add_node("summarise", summarise)
+graph.add_node("quiz", quiz_subgraph)
+graph.add_node("report_quiz", report_quiz)
 
-graph.add_edge(START, "chat")
+graph.add_conditional_edges(START, route_after_start, {
+    "quiz": "quiz",
+    "chat": "chat"
+})
 
 graph.add_conditional_edges("chat", route_after_chat, {
     "tools": "tools",
@@ -88,6 +116,8 @@ graph.add_conditional_edges("chat", route_after_chat, {
     END: END
 })
 graph.add_edge("tools", "chat")
+graph.add_edge("quiz", "report_quiz")
+graph.add_edge("report_quiz", END)
 graph.add_edge("summarise", END)
 
 workflow = graph.compile(checkpointer=checkpointer)
@@ -95,6 +125,7 @@ workflow = graph.compile(checkpointer=checkpointer)
 if __name__ == "__main__":
     import sys
     from uuid import uuid4
+    from langgraph.types import Command
     from storage import config_for
 
     print("--- nodes (free) ---")
@@ -130,6 +161,51 @@ if __name__ == "__main__":
         got = route_after_chat(state)
         print(f"{'ok  ' if got == want else 'FAIL'} {name:<16} -> {got}")
 
+    print("\n--- route_after_start (free) ---")
+    for name, state, want in [
+        ("new session, no quiz key", {"messages": [h1], "learner_id": "riya"}, "chat"),
+        ("quiz requested",           {"messages": [], "learner_id": "riya", "quiz_topic": "loops"}, "quiz"),
+        ("after a quiz (cleared)",   {"messages": [h1], "learner_id": "riya", "quiz_topic": ""}, "chat"),
+    ]:
+        got = route_after_start(state)
+        print(f"{'ok  ' if got == want else 'FAIL'} {name:<26} -> {got}")
+
+    print("\n--- report_quiz (free) ---")
+    fake_result = {"topic": "loops", "score": 2, "total": 3, "missed": [
+        {"question": "What does range(1, 5) give?", "given": "A", "correct": "B",
+         "correct_text": "1, 2, 3, 4", "right": False, "explanation": "range stops before the stop value."}]}
+    out = report_quiz({"learner_id": "riya", "quiz_result": fake_result, "quiz_topic": "loops"})
+    msg = out["messages"][0]
+    print(msg.content)
+    print("ok  " if isinstance(msg, AIMessage) else "FAIL", "the report is a tutor (AI) message")
+    print("ok  " if "2 of 3" in msg.content and "1, 2, 3, 4" in msg.content else "FAIL", "score and answer in the text")
+    print("ok  " if out["quiz_topic"] == "" else "FAIL", "quiz_topic cleared")
+    perfect = report_quiz({"learner_id": "riya", "quiz_topic": "loops",
+                           "quiz_result": {"topic": "loops", "score": 3, "total": 3, "missed": []}})
+    print("ok  " if "Well done" in perfect["messages"][0].content else "FAIL", "3 of 3 says well done")
+
+    if len(sys.argv) > 1 and sys.argv[1] == "quiz":
+        print("\n--- two quizzes and a chat turn in ONE session (2 quiz model calls + 1 chat) ---")
+        config = {**config_for("riya", f"test-{uuid4().hex[:6]}"),
+                  "run_name": "quizmate-quiz-test", "tags": ["quizmate", "test", "quiz"]}
+        for topic in ["loops", "dictionaries"]:
+            state = workflow.invoke({"messages": [], "learner_id": "riya", "quiz_topic": topic}, config=config)
+            pauses = 0
+            while state.get("__interrupt__"):
+                pauses += 1
+                state = workflow.invoke(Command(resume="A"), config=config)
+            report = state["messages"][-1]
+            total = state["quiz_result"]["total"]
+            print(f"\n{topic}: {pauses} questions | total {total} | report: {report.content[:80]!r}")
+            print("ok  " if pauses == 3 and total == 3 else "FAIL",
+                  f"{topic}: exactly 3 questions, and the total is 3 (not carried over from an earlier quiz)")
+            print("ok  " if isinstance(report, AIMessage) else "FAIL", f"{topic}: report is a tutor message")
+
+        after = workflow.invoke({"messages": [HumanMessage(content="What did I just get quizzed on?")],
+                                 "learner_id": "riya"}, config=config)
+        print("\nchat after the quizzes:", after["messages"][-1].content[:150])
+        print("ok  " if after.get("quiz_topic", "") == "" else "FAIL", "quiz_topic is clear, so chat resumed")
+
     if len(sys.argv) > 1 and sys.argv[1] == "run":
         print("\n--- one session, 6 turns, as riya (uses the model) ---")
         config = {**config_for("riya", f"test-{uuid4().hex[:6]}"),
@@ -144,9 +220,7 @@ if __name__ == "__main__":
             result = workflow.invoke({"messages": [HumanMessage(content=text)], "learner_id": "riya"}, config=config)
             print(f"\n[{number}] you> {text}\nbot> {result['messages'][-1].content[:200]}")
             print(f"   [messages kept: {len(result['messages'])} | summary: {result.get('summary', '')[:90]!r}]")
-
         final = workflow.get_state(config).values
-        first_turn_kept = any("job interview" in str(m.content) for m in final["messages"][:1])
         print("\nfinal summary:", final.get("summary", ""))
         print("ok  " if "interview" in final.get("summary", "").lower() else "FAIL", "the goal survived in the summary")
         print("ok  " if "interview" in final["messages"][-1].content.lower() else "FAIL",

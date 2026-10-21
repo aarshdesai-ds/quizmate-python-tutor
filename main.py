@@ -1,8 +1,12 @@
 import sys
 from chat_graph import learners, workflow
 from langchain_core.messages import AIMessage, HumanMessage
+from tools import TOPICS
+from langgraph.types import Command
 from storage import config_for
 from uuid import uuid4
+
+topics = ", ".join(TOPICS)
 
 learners_list = list(learners.keys())
 existing_learners = ", ".join(learners_list)
@@ -23,7 +27,7 @@ else:
               session_id = uuid4().hex[:6]
               name = learner['name']
               level = learner['level']
-              print(f"Quizmate for {name} ({level}). Session {session_id}. Type 'summary', 'history', or 'exit'.")
+              print(f"Quizmate for {name} ({level}). Session {session_id}. Type 'summary', 'history', 'exit', or 'quiz <topic>.")
 
 config = {**config_for(learner_id, session_id), "run_name": "quizmate-chat", "tags":['quizmate', 'cli'], "metadata": {"learner_id": learner_id, "session_id": session_id}}
 while True:
@@ -62,6 +66,31 @@ while True:
              print("No summary yet.")
         else:
              print(f"Summary:\n{summary}")
+    elif user_input.split()[0].lower() == "quiz":
+        words = user_input.split()
+        topic = words[1].lower() if len(words) > 1 else ""
+        if topic not in TOPICS:
+             print(f"Unknown topic: {topic}.\nTopics: {topics}")
+             continue
+        try:
+            result = workflow.invoke({"quiz_topic":topic, "learner_id": learner_id}, config = config)
+            while result.get("__interrupt__"):
+                payload = result["__interrupt__"][0].value
+                number = payload['number']
+                total = payload['total']
+                question = payload['question']
+                options = "\n".join(payload['options'])
+                print(f"Question {number} of {total}\n{question}\n{options}")
+                answer = input("answer> ").strip()
+                while not answer:
+                    answer = input("answer> ").strip()
+                result = workflow.invoke(Command(resume=answer), config=config)
+            print(f"bot> {result['messages'][-1].content}")
+        except Exception:
+            print("bot> Sorry, something went wrong...")     
+
+        
+
     else:
         try:
             result = workflow.invoke({"messages":[user_input], "learner_id": learner_id}, config=config)
