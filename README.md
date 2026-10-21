@@ -17,6 +17,7 @@ The project was built in four steps, each one adding a group of LangGraph ideas 
 - [Step 2: Quizzes](#step-2-quizzes)
 - [Step 3: Long-Term Memory](#step-3-long-term-memory)
 - [Step 4: Forgetting and the Parallel Step](#step-4-forgetting-and-the-parallel-step)
+- [The API](#the-api)
 - [What the Project Taught](#what-the-project-taught)
 - [Project Structure](#project-structure)
 - [How to Run](#how-to-run)
@@ -317,6 +318,72 @@ Here, parallel saves almost no time: `save_scores` takes milliseconds and the mo
 
 ---
 
+## The API
+
+`api.py` serves the same graph over HTTP with FastAPI. Nothing in the graph changed: each pause becomes a response, and each answer becomes the next request. The checkpointer holds everything in between, so the server keeps no state of its own.
+
+### Endpoints
+
+| Method and path | Body | Does |
+|---|---|---|
+| `GET /health` | — | Liveness check |
+| `POST /sessions` | `learner_id` | Checks the learner and returns a new session id |
+| `POST /sessions/{id}/messages` | `text` | A chat turn |
+| `POST /sessions/{id}/quiz` | `topic` | Starts a quiz and returns question 1 |
+| `POST /sessions/{id}/forget` | — | Returns the confirmation pause, or "nothing saved" |
+| `POST /sessions/{id}/resume` | `answer` | Answers whatever is paused: a quiz question or the forget confirmation |
+| `GET /sessions/{id}/history` | — | The session summary and its messages |
+
+The session id is the thread id (`riya-4f2a91`), so the server recovers the learner from it and needs no session table.
+
+Every POST that runs the graph returns the same shape:
+
+| Field | Value |
+|---|---|
+| `status` | `paused` or `done` |
+| `kind` | `quiz_question`, `forget_confirm`, or empty |
+| `pause` | The pause payload: the question and options, or the facts and topics to delete |
+| `reply` | The tutor's reply, when `status` is `done` |
+
+### A quiz over HTTP
+
+```
+POST /sessions                  {"learner_id": "riya"}
+  → {"session_id": "riya-4f2a91", "learner_id": "riya", "name": "Riya"}
+
+POST /sessions/riya-4f2a91/quiz {"topic": "loops"}
+  → {"status": "paused", "kind": "quiz_question",
+     "pause": {"number": 1, "total": 3, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."]}}
+
+POST /sessions/riya-4f2a91/resume {"answer": "B"}
+  → {"status": "paused", "kind": "quiz_question", "pause": {"number": 2, ...}}
+
+  … question 3 …
+
+  → {"status": "done", "reply": "Riya, you scored 2 of 3 on loops. ... Study next: ..."}
+```
+
+### Errors
+
+Every check runs before any model call, so a bad request costs nothing.
+
+| Case | Code |
+|---|---|
+| Unknown learner or session | 404 |
+| A message, quiz or forget sent while something is paused | 409 |
+| `resume` with nothing paused | 409 |
+| An unknown topic, or an empty message or answer | 422 |
+| The model call fails | 502 |
+
+The first 409 matters most. Without it, a chat message sent in the middle of a quiz would leave the quiz waiting forever. The server checks whether the thread has a node still waiting to run, which also catches a pause inside the quiz subgraph.
+
+| Test | Result |
+|---|---|
+| 8 free checks with FastAPI's test client (health, 404s, 422s, resume with nothing paused, empty history) | All pass, with no model calls |
+| A walkthrough in `/docs` as Sam: a quiz, a message mid-quiz, three answers, an extra resume, then forget with "no" and "yes" | Every response matched: the 409 mid-quiz, the report with "Study next", and an empty history after "yes" |
+
+---
+
 ## What the Project Taught
 
 - **Fix bias in code, not in the prompt.** The model put the right answer on B 23 times out of 36. A shuffle fixed it completely.
@@ -350,6 +417,7 @@ quizmate-python-tutor/
 ├── quiz_graph.py           # The quiz subgraph: write, shuffle, ask, mark, finish
 ├── chat_graph.py           # State, system message, all parent nodes, routers, graph
 ├── main.py                 # The terminal chat, with the quiz and forget loops
+├── api.py                  # The same graph over HTTP with FastAPI
 │
 ├── eval_memory.py          # Runs and scores the memory evaluation, or re-scores saved results
 └── eval/
@@ -391,7 +459,13 @@ python ingest.py
 python main.py riya
 ```
 
-5. Run the memory evaluation (20 `gpt-4o-mini` calls):
+5. Or run the API, then open http://127.0.0.1:8000/docs to try every endpoint:
+
+```bash
+python api.py
+```
+
+6. Run the memory evaluation (20 `gpt-4o-mini` calls):
 
 ```bash
 python eval_memory.py run
@@ -417,6 +491,8 @@ python eval_memory.py rescore
 - **Extracted facts sometimes use "they"** despite the prompt asking for the learner's name.
 - **The evaluation is small and synthetic.** 20 messages, written by the same hand as the prompts, each run once at temperature 0. 20 of 20 means these cases pass, not that extraction is solved. The probes are smaller still.
 - **One model throughout.** Every result is for `gpt-4o-mini`.
+- **The API has no authentication.** Anyone who can reach it can run model calls on the server's OpenAI key. It is meant to run locally.
+- **The API uses the same SQLite file as the CLI.** That is fine for one user at a time, not for many at once.
 
 ---
 
