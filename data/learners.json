@@ -1,0 +1,17 @@
+{
+  "riya": {
+    "learner_id": "riya",
+    "name": "Riya",
+    "level": "beginner"
+  },
+  "omar": {
+    "learner_id": "omar",
+    "name": "Omar",
+    "level": "intermediate"
+  },
+  "sam": {
+    "learner_id": "sam",
+    "name": "Sam",
+    "level": "beginner"
+  }
+}

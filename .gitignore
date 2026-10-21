@@ -1,0 +1,5 @@
+quizmate.db*
+kb_db/
+venv/
+.env
+__pycache__/
