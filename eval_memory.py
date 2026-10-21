@@ -93,7 +93,7 @@ if __name__ == "__main__":
     ids = [row["id"] for row in rows]
     print("ok  " if len(rows) == 20 else "FAIL", "rows loaded:", len(rows))
     print("ok  " if len(set(ids)) == len(ids) else "FAIL", "ids are unique")
-    print("ok  " if sum(row["expect_write"] for row in rows) == 11 else "FAIL", "10 write rows, 10 no-write rows")
+    print("ok  " if sum(row["expect_write"] for row in rows) == 11 else "FAIL", "11 write rows, 9 no-write rows")
 
     print("\n--- score_row (free) ---")
     goal = {"expect_write": True, "must_contain": "data analyst", "must_not_contain": None}
