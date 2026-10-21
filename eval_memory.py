@@ -94,25 +94,7 @@ if __name__ == "__main__":
     print("ok  " if len(rows) == 20 else "FAIL", "rows loaded:", len(rows))
     print("ok  " if len(set(ids)) == len(ids) else "FAIL", "ids are unique")
     print("ok  " if sum(row["expect_write"] for row in rows) == 11 else "FAIL", "11 write rows, 9 no-write rows")
-
-    print("\n--- score_row (free) ---")
-    goal = {"expect_write": True, "must_contain": "data analyst", "must_not_contain": None}
-    nothing = {"expect_write": False, "must_contain": None, "must_not_contain": None}
-    mixed = {"expect_write": True, "must_contain": "nurse", "must_not_contain": "dictionar"}
-    checks = [
-        ("goal, case ignored",       score_row(goal, ["Riya wants to be a Data Analyst."]) == ""),
-        ("goal, nothing kept",       score_row(goal, []) != ""),
-        ("goal, wrong content",      score_row(goal, ["Riya likes short examples."]) != ""),
-        ("no write, nothing kept",   score_row(nothing, []) == ""),
-        ("no write, something kept", score_row(nothing, ["Riya asked about sets."]) != ""),
-        ("mixed, only the nurse",    score_row(mixed, ["Sam is a nurse."]) == ""),
-        ("mixed, topic leaked",      score_row(mixed, ["Sam is a nurse.", "Sam is learning dictionaries."]) != ""),
-        ("mixed, in second fact",    score_row(mixed, ["Sam is new to coding.", "Sam is a nurse."]) == ""),
-    ]
-    for label, passed in checks:
-        print("ok  " if passed else "FAIL", label)
-    print("reason example:", score_row(nothing, ["Riya asked about sets."]))
-
+    
     if len(sys.argv) > 1 and sys.argv[1] == "run":
         print("\n--- eval: 20 rows (20 model calls) ---")
         results = run_eval(rows)

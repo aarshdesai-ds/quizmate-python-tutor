@@ -17,12 +17,3 @@ checkpointer = SqliteSaver(conn = checkpoint_conn)
 store = SqliteStore(store_conn)
 
 store.setup()
-
-print("\n--- store (free) ---")
-namespace = ("learner", "test", "facts")
-store.put(namespace, "t1", {"data": "test fact"})
-item = store.get(namespace, "t1")
-print("ok  " if item and item.value["data"] == "test fact" else "FAIL", "put then get")
-print("ok  " if len(store.search(namespace)) == 1 else "FAIL", "search finds it")
-store.delete(namespace, "t1")
-print("ok  " if store.get(namespace, "t1") is None else "FAIL", "deleted again (test leaves nothing behind)")

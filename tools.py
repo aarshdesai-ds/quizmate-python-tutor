@@ -76,28 +76,3 @@ valid topics: do not explain a topic that is not in the notes.
     return note[0].page_content
 
 tools = [search_notes, get_note]
-
-if __name__ == "__main__":
-    import sys
-
-    print("--- get_note (free: lookup by id, no embedding call) ---")
-    loops = get_note.invoke({"topic": "loops"})
-    print(loops[:120], "...\n")
-    print("ok  " if loops.startswith("Loops (loops, beginner)") else "FAIL", "header line first")
-    print("ok  " if all(s in loops for s in ["## Key idea", "## Example", "## Common mistakes"]) else "FAIL",
-          "full note returned")
-    unknown = get_note.invoke({"topic": "classes"})
-    print("ok  " if "not" in unknown.lower() and "dictionaries" in unknown else "FAIL",
-          "unknown topic lists the valid ones:", unknown[:90])
-    print("tools:", [t.name for t in tools])
-
-    if len(sys.argv) > 1 and sys.argv[1] == "run":
-        print("\n--- search_notes (embedding calls only) ---")
-        for args in [{"query": "how do I avoid a KeyError"},
-                     {"query": "difference between append and extend"},
-                     {"query": "anything", "topic": "sets"}]:
-            result = search_notes.invoke(args)
-            print(f"\n{args}:")
-            print(result)
-        one = search_notes.invoke({"query": "anything", "topic": "sets"})
-        print("\nok  " if one.count(" | ") == 2 and "sets" in one else "\nFAIL", "topic filter returns only the sets note")

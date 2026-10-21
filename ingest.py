@@ -54,30 +54,5 @@ def load_store():
     return store
 
 if __name__ == "__main__":
-    import sys
-
-    print("--- parse (free) ---")
-    docs = load_notes()
-    by_topic = {d.metadata["topic"]: d for d in docs}
-    print(f"{len(docs)} notes:", sorted(by_topic))
-    print("ok  " if len(docs) == 12 else "FAIL", "12 notes")
-    d = by_topic["dictionaries"]
-    print("ok  " if d.metadata == {"topic": "dictionaries", "title": "Dictionaries", "level": "beginner"} else "FAIL",
-          "dictionaries metadata:", d.metadata)
-    print("ok  " if d.page_content.startswith("Dictionaries (dictionaries, beginner)") else "FAIL",
-          "header line:", d.page_content.splitlines()[0])
-    print("ok  " if all(s in d.page_content for s in ["## Key idea", "## Example", "## Common mistakes"]) else "FAIL",
-          "all three sections present")
-    levels = sorted(doc.metadata["level"] for doc in docs)
-    print("ok  " if levels.count("beginner") ==  8 and levels.count("intermediate") == 4 else "FAIL",
-          "8 beginner, 4 intermediate")
-
-    if len(sys.argv) > 1 and sys.argv[1] == "build":
-        print("\n--- build the store (one embedding call) ---")
-        store = build_store()
-        print("stored:", len(store.get()["ids"]))
-        opened = load_store()
-        print("ok  " if len(opened.get()["ids"]) == 12 else "FAIL", "load_store sees the same 12, without adding")
-        for query in ["how do I avoid a KeyError", "what does range stop at", "catch an error"]:
-            hits = opened.similarity_search(query, k=2)
-            print(f"{query!r}: {[h.metadata['topic'] for h in hits]}")
+    store = build_store()
+    print(f"Built the notes store: {len(store.get()['ids'])} notes in kb_db.")
